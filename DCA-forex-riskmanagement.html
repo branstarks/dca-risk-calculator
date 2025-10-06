@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Trading Risk & Lot Size Calculator (Pips Distance)</title>
+  <style>
+    :root{--bg:#071229;--muted:#94a3b8;--accent:#06b6d4;--glass:rgba(255,255,255,0.03)}
+    html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:linear-gradient(180deg,#071029 0%, #07162a 100%);color:#e6eef6}
+    .wrap{max-width:980px;margin:28px auto;padding:20px}
+    h1{margin:0;font-size:20px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:18px;box-shadow:0 6px 20px rgba(2,6,23,0.6);}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+    input[type=number], input[type=text], select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit;font-size:14px}
+    .controls{display:flex;gap:8px;margin-top:12px}
+    button{background:var(--accent);border:none;padding:10px 12px;border-radius:8px;color:#042027;font-weight:600;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{padding:10px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.03);font-size:13px}
+    th{color:var(--muted);font-weight:600}
+    td.num{font-family:monospace}
+    .small{font-size:12px;color:var(--muted)}
+    @media (max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Talpak Traders Forex DCA Trading Risk & Lot Size Calculator — Pips Distance</h1>
+    <div class="card">
+      <div class="grid">
+        <div>
+          <label>Account Balance</label>
+          <input id="accountBalance" type="number" value="2300" min="0" step="0.01">
+        </div>
+        <div>
+          <label>Max Risk %</label>
+          <input id="maxRiskPct" type="number" value="4" min="0" step="0.01">
+        </div>
+        <div>
+          <label>Stop Loss Distance (pips/pts)</label>
+          <input id="stopLoss" type="number" value="40" min="0" step="0.01">
+        </div>
+        <div>
+          <label>Value per $ move per Lot</label>
+          <input id="valuePerLot" type="number" value="10" min="0" step="0.01">
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top:10px">
+        <div>
+          <label>Entries (rows)</label>
+          <input id="entries" type="number" value="4" min="1" max="50" step="1">
+        </div>
+        <div>
+          <label>Starting Entry Price</label>
+          <input id="startPrice" type="text" value="149.643" placeholder="e.g. 149.643">
+        </div>
+        <div>
+          <label>Pips Distance</label>
+          <input id="pipsDistance" type="number" value="0.4" min="0" step="0.0001">
+        </div>
+        <div>
+          <label>Direction</label>
+          <select id="direction">
+            <option value="subtract">Subtract (price decreases each entry)</option>
+            <option value="add">Add (price increases each entry)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top:10px">
+        <div>
+          <label>Round Lot Size to</label>
+          <select id="lotRound">
+            <option value="4">4 decimals (0.0001)</option>
+            <option value="3">3 decimals</option>
+            <option value="2">2 decimals</option>
+            <option value="6">6 decimals</option>
+          </select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div class="controls">
+            <button id="generate">Generate Table</button>
+            <button id="exportCsv" class="ghost">Export CSV</button>
+            <button id="copyBtn" class="ghost">Copy CSV</button>
+          </div>
+        </div>
+        <div style="grid-column: span 2;" id="summary"></div>
+      </div>
+
+      <div id="tableWrap"></div>
+
+    </div>
+    <div class="small" style="margin-top:10px;color:var(--muted)">Tip: you can edit any Entry Price cell after generation; the lot and risk columns won't auto-recalculate from manual price edits (they're driven by the pips pattern and risk settings).</div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    function formatNum(n, decimals=2){ if (isNaN(n) || !isFinite(n)) return '-'; return Number(n).toLocaleString(undefined,{minimumFractionDigits:decimals,maximumFractionDigits:decimals}); }
+
+    function calculateAndRender(){
+      const accountBalance = parseFloat($('accountBalance').value) || 0;
+      const maxRiskPct = parseFloat($('maxRiskPct').value) || 0;
+      const stopLoss = parseFloat($('stopLoss').value) || 0;
+      const valuePerLot = parseFloat($('valuePerLot').value) || 0;
+      const entries = Math.max(1, parseInt($('entries').value)||1);
+      const startPriceRaw = $('startPrice').value.trim();
+      const pipsDistance = parseFloat($('pipsDistance').value) || 0;
+      const direction = $('direction').value;
+      const lotRound = parseInt($('lotRound').value,10)||4;
+
+      const totalRisk = accountBalance * maxRiskPct / 100;
+      const riskPerEntry = totalRisk / entries;
+      const rawLot = (stopLoss * valuePerLot) > 0 ? (riskPerEntry / (stopLoss * valuePerLot)) : 0;
+      const lotSize = Number(rawLot.toFixed(lotRound));
+
+      $('summary').innerHTML = `Total Risk: <strong>$${formatNum(totalRisk,2)}</strong> — Risk per entry: <strong>$${formatNum(riskPerEntry,2)}</strong> — Lot size (each): <strong>${lotSize}</strong>`;
+
+      // Determine decimal places for prices: guess from startPrice or pipsDistance
+      function decimalsFrom(val){
+        const s = String(val);
+        if (s.indexOf('.')>=0) return s.split('.')[1].length;
+        return 0;
+      }
+      let priceDecimals = 3; // default
+      if (startPriceRaw) priceDecimals = Math.max(0, decimalsFrom(startPriceRaw));
+      const pipsDecimals = decimalsFrom(pipsDistance);
+      priceDecimals = Math.max(priceDecimals, pipsDecimals);
+
+      const startPrice = parseFloat(startPriceRaw) || 0;
+      const sign = (direction === 'subtract') ? -1 : 1;
+
+      // Build table
+      let html = '<table><thead><tr><th>#</th><th>Entry Price</th><th>Lot Size</th><th>Risk Per Entry ($)</th><th>Cumulative Risk ($)</th><th>Notes</th></tr></thead><tbody>';
+      let cum = 0;
+      for(let i=0;i<entries;i++){
+        cum += riskPerEntry;
+        const price = startPrice + sign * pipsDistance * i;
+        const priceStr = startPrice? price.toFixed(priceDecimals) : '';
+        html += `<tr data-row="${i}">`;
+        html += `<td>${i+1}</td>`;
+        html += `<td><input class="entry-price" data-row="${i}" type="text" value="${priceStr}" placeholder="price"></td>`;
+        html += `<td class="num">${lotSize}</td>`;
+        html += `<td class="num">${formatNum(riskPerEntry,2)}</td>`;
+        html += `<td class="num">${formatNum(cum,2)}</td>`;
+        html += `<td contenteditable="true" class="small">${i===0?'First Entry':''}</td>`;
+        html += `</tr>`;
+      }
+      html += '</tbody></table>';
+      $('tableWrap').innerHTML = html;
+
+      // allow editing entry prices but don't recalc other columns from manual edits
+      Array.from(document.querySelectorAll('.entry-price')).forEach(inp=>{
+        inp.addEventListener('change', ()=>{
+          // no-op for now
+        });
+      });
+    }
+
+    function exportCSV(){
+      const rows = [];
+      const ths = Array.from(document.querySelectorAll('table thead th')).map(t=>t.textContent.trim());
+      rows.push(ths.join(','));
+      Array.from(document.querySelectorAll('table tbody tr')).forEach(tr=>{
+        const cols = Array.from(tr.querySelectorAll('td'));
+        const row = cols.map((td,idx)=>{
+          if (idx===1){ // entry price input
+            const inp = td.querySelector('input');
+            return '"' + (inp?inp.value.replace(/"/g,'""'):'') + '"';
+          }
+          return '"' + td.textContent.trim().replace(/"/g,'""') + '"';
+        });
+        rows.push(row.join(','));
+      });
+      return rows.join('\n');
+    }
+
+    // UI hooks
+    $('generate').addEventListener('click', ()=> calculateAndRender());
+    ['accountBalance','maxRiskPct','stopLoss','valuePerLot','entries','startPrice','pipsDistance','direction','lotRound'].forEach(id=>{
+      $(id).addEventListener('input', ()=> calculateAndRender());
+      $(id).addEventListener('change', ()=> calculateAndRender());
+    });
+
+    $('exportCsv').addEventListener('click', ()=>{
+      const csv = exportCSV();
+      const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'risk_table_with_pips.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    $('copyBtn').addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText(exportCSV());
+        alert('CSV copied to clipboard');
+      }catch(e){
+        alert('Copy failed — try Export.');
+      }
+    });
+
+    // initial render
+    calculateAndRender();
+  </script>
+</body>
+</html>
